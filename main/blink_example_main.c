@@ -3,8 +3,8 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "freertos/event_groups.h"
+#include "freertos/task.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include <inttypes.h>
@@ -18,10 +18,11 @@
 #include "esp_wifi.h"
 #include "lwip/err.h"
 #include "lwip/sys.h"
+#include <esp_http_server.h>
 
-#define ESP_WIFI_SSID      CONFIG_ESP_WIFI_SSID
-#define ESP_WIFI_PASS      CONFIG_ESP_WIFI_PASSWORD
-#define ESP_MAXIMUM_RETRY  CONFIG_ESP_MAXIMUM_RETRY
+#define ESP_WIFI_SSID CONFIG_ESP_WIFI_SSID
+#define ESP_WIFI_PASS CONFIG_ESP_WIFI_PASSWORD
+#define ESP_MAXIMUM_RETRY CONFIG_ESP_MAXIMUM_RETRY
 
 static const char *TAG = "ADC EXAMPLE";
 
@@ -103,8 +104,8 @@ void wifi_init_sta(void) {
     ESP_LOGI(TAG, "connected to ap SSID:%s password:%s", ESP_WIFI_SSID,
              ESP_WIFI_PASS);
   } else if (bits & WIFI_FAIL_BIT) {
-    ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:%s",
-             ESP_WIFI_SSID, ESP_WIFI_PASS);
+    ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:%s", ESP_WIFI_SSID,
+             ESP_WIFI_PASS);
   } else {
     ESP_LOGE(TAG, "UNEXPECTED EVENT");
   }
@@ -159,6 +160,23 @@ double read_temp_from_nvs(nvs_handle_t nvsHandle, esp_err_t *err) {
   //   }
 }
 
+double get_temp() {
+  uint32_t voltage =
+      esp_adc_cal_raw_to_voltage(adc1_get_raw(ADC1_CHANNEL_7), &adc1_chars);
+  double temp = ((8.194 - (sqrt(((-8.194) * (-8.194)) +
+                                (4 * 0.00262 * (1324.0 - voltage * 1.0))))) /
+                 (2 * (-0.00262))) +
+                30;
+  return temp;
+}
+
+esp_err_t test_handler(httpd_req_t *req) {
+  char *resp = malloc(100);
+  sprintf((char *)resp, "<h1>temp is: %f</h1>", get_temp());
+  httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+  return ESP_OK;
+}
+
 void app_main(void) {
 
   // Initialize NVS
@@ -176,8 +194,20 @@ void app_main(void) {
 
   ESP_ERROR_CHECK(adc1_config_width(ADC_WIDTH_BIT_DEFAULT));
   ESP_ERROR_CHECK(adc1_config_channel_atten(ADC1_CHANNEL_7, ADC_ATTEN_DB_11));
-
   wifi_init_sta();
+
+  // HTTP Server
+  httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+  httpd_handle_t server = NULL;
+  if (httpd_start(&server, &config) == ESP_OK) {
+
+    httpd_uri_t test_uri = {.uri = "/",
+                            .method = HTTP_GET,
+                            .handler = test_handler,
+                            .user_ctx = NULL};
+    httpd_register_uri_handler(server, &test_uri);
+  }
+  //______________
   while (1) {
     voltage =
         esp_adc_cal_raw_to_voltage(adc1_get_raw(ADC1_CHANNEL_7), &adc1_chars);
