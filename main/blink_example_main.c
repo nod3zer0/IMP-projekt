@@ -24,7 +24,13 @@
 #define ESP_WIFI_PASS CONFIG_ESP_WIFI_PASSWORD
 #define ESP_MAXIMUM_RETRY CONFIG_ESP_MAXIMUM_RETRY
 
+#define LED_GPIO GPIO_NUM_2
+
 static const char *TAG = "ADC EXAMPLE";
+
+int temp_limit = 0;
+int hystereze = 0;
+int led_is_on = 0;
 
 static esp_adc_cal_characteristics_t adc1_chars;
 
@@ -146,18 +152,6 @@ double read_temp_from_nvs(nvs_handle_t nvsHandle, esp_err_t *err) {
   int32_t temp_int = 0;
   *err = nvs_get_i32(nvsHandle, "temp", &temp_int);
   return temp_int / 1000.0;
-
-  //   switch (err) {
-  //   case ESP_OK:
-  //     printf("Done\n");
-  //     printf("Restart counter = %" PRIu32 "\n", restart_counter);
-  //     break;
-  //   case ESP_ERR_NVS_NOT_FOUND:
-  //     printf("The value is not initialized yet!\n");
-  //     break;
-  //   default:
-  //     printf("Error (%s) reading!\n", esp_err_to_name(err));
-  //   }
 }
 
 double get_temp() {
@@ -170,15 +164,58 @@ double get_temp() {
   return temp;
 }
 
-esp_err_t test_handler(httpd_req_t *req) {
-  char *resp = malloc(100);
-  sprintf((char *)resp, "<h1>temp is: %f</h1>", get_temp());
+void renderForm(httpd_req_t *req) {
+  char *resp = malloc(1000);
+
+  sprintf((char *)resp,
+          "<h1>temp is: %f</h1>\n"
+          "<h1>temp limit is: %d</h1>\n"
+          "<form action=\"/\" method=\"post\">\n"
+          "  <label for=\"hranice_teploty\">Hranice teploty</label>\n"
+          "  <input type=\"text\" id=\"hranice_teploty\" "
+          "name=\"hranice_teploty\"><br><br>\n"
+          "  <input type=\"submit\" value=\"Submit\">\n"
+          "</form>",
+          get_temp(), temp_limit);
+
+  // sprintf((char *)resp, "<h1>temp is: %f</h1>", get_temp());
   httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+}
+
+esp_err_t root_get_handler(httpd_req_t *req) {
+
+  renderForm(req);
+  return ESP_OK;
+}
+
+esp_err_t root_post_handler(httpd_req_t *req) {
+  char *buf = malloc(req->content_len + 1);
+
+  // int dataLength = esp_http_client_get_post_field(req->handle, buf);
+
+  // print data
+  // printf("Data: %s\n", buf);
+
+  int ret = httpd_req_recv(req, buf, req->content_len);
+
+  // parse data
+  char *hranice_teploty = strstr(buf, "hranice_teploty=");
+  if (hranice_teploty != NULL) {
+    hranice_teploty += 16;
+    temp_limit = atoi(hranice_teploty);
+  }
+
+  // print data
+  printf("Data: %s\n", buf);
+  renderForm(req);
   return ESP_OK;
 }
 
 void app_main(void) {
 
+  gpio_reset_pin(LED_GPIO);
+  /* Set the GPIO as a push/pull output */
+  gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
   // Initialize NVS
   nvs_handle_t nvsHandle;
   esp_err_t err;
@@ -201,11 +238,17 @@ void app_main(void) {
   httpd_handle_t server = NULL;
   if (httpd_start(&server, &config) == ESP_OK) {
 
-    httpd_uri_t test_uri = {.uri = "/",
-                            .method = HTTP_GET,
-                            .handler = test_handler,
-                            .user_ctx = NULL};
-    httpd_register_uri_handler(server, &test_uri);
+    httpd_uri_t uri = {.uri = "/",
+                       .method = HTTP_GET,
+                       .handler = root_get_handler,
+                       .user_ctx = NULL};
+    httpd_register_uri_handler(server, &uri);
+
+    httpd_uri_t uri2 = {.uri = "/",
+                        .method = HTTP_POST,
+                        .handler = root_post_handler,
+                        .user_ctx = NULL};
+    httpd_register_uri_handler(server, &uri2);
   }
   //______________
   while (1) {
@@ -222,6 +265,17 @@ void app_main(void) {
     temp2 = read_temp_from_nvs(nvsHandle, &err);
     ESP_LOGI(TAG, "Temp from NVS: %f C", temp2);
     ets_delay_us(1000000);
+
+    if ((temp < (temp_limit - hystereze))&& led_is_on == 1) {
+      led_is_on = 0;
+      gpio_set_level(LED_GPIO, 1);
+    }
+
+    if ((temp > (temp_limit + hystereze)) && led_is_on == 0) {
+      led_is_on = 1;
+      gpio_set_level(LED_GPIO, 0);
+    }
+    ESP_LOGI(TAG, "LED: %d", led_is_on);
 
     vTaskDelay(pdMS_TO_TICKS(100));
   }
