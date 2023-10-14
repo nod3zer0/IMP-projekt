@@ -58,6 +58,35 @@ static EventGroupHandle_t s_wifi_event_group;
 
 static int s_retry_num = 0;
 
+// ------------------ function declarations ------------------
+esp_err_t GetTempsHandler(httpd_req_t *req);
+static void event_handler(void *arg, esp_event_base_t event_base,
+                          int32_t event_id, void *event_data);
+void WifiInitSta(void);
+void InitNVS(esp_err_t *err);
+int write_temp_to_nvs(nvs_handle_t nvsHandle, double temp);
+double ReadTempFromNVS(nvs_handle_t nvsHandle, esp_err_t *err);
+double GetTemp();
+void RenderHome(httpd_req_t *req);
+esp_err_t RootGetTempApi(httpd_req_t *req);
+esp_err_t RootGetHandler(httpd_req_t *req);
+esp_err_t ClearTempsHandler(httpd_req_t *req);
+esp_err_t ChangeTempLimitHandler(httpd_req_t *req);
+esp_err_t GetTempsHandler(httpd_req_t *req);
+void TimeInit();
+int SaveTempToNVSwithTimestamp(nvs_handle_t nvsHandle, double temp);
+void readTemperature_timer(void *param);
+
+//-----------------------------------------------------------
+
+/**
+ * @brief handles wifi events, so it can safely connect to wifi
+ *
+ * @param arg
+ * @param event_base
+ * @param event_id
+ * @param event_data
+ */
 static void event_handler(void *arg, esp_event_base_t event_base,
                           int32_t event_id, void *event_data) {
   if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
@@ -80,7 +109,11 @@ static void event_handler(void *arg, esp_event_base_t event_base,
   }
 }
 
-void wifi_init_sta(void) {
+/**
+ * @brief inicializes wifi and connects to it
+ *
+ */
+void WifiInitSta(void) {
   s_wifi_event_group = xEventGroupCreate();
 
   ESP_ERROR_CHECK(esp_netif_init());
@@ -136,12 +169,16 @@ void wifi_init_sta(void) {
   vEventGroupDelete(s_wifi_event_group);
 }
 
-void init_nvs(esp_err_t *err) {
+/**
+ * @brief inicializes nvs
+ *
+ * @param err
+ */
+void InitNVS(esp_err_t *err) {
 
   *err = nvs_flash_init();
   if (*err == ESP_ERR_NVS_NO_FREE_PAGES ||
       *err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-    // NVS partition was truncated and needs to be erased
     // Retry nvs_flash_init
     ESP_ERROR_CHECK(nvs_flash_erase());
     *err = nvs_flash_init();
@@ -149,20 +186,13 @@ void init_nvs(esp_err_t *err) {
   ESP_ERROR_CHECK(*err);
 }
 
-int write_temp_to_nvs(nvs_handle_t nvsHandle, double temp) {
-  esp_err_t err;
-  int32_t temp_int = temp * 1000;
-  err = nvs_set_i32(nvsHandle, "temp", temp_int);
-  return err;
-}
-
-double read_temp_from_nvs(nvs_handle_t nvsHandle, esp_err_t *err) {
+double ReadTempFromNVS(nvs_handle_t nvsHandle, esp_err_t *err) {
   int32_t temp_int = 0;
   *err = nvs_get_i32(nvsHandle, "temp", &temp_int);
   return temp_int / 1000.0;
 }
 
-double get_temp() {
+double GetTemp() {
   uint32_t voltage =
       esp_adc_cal_raw_to_voltage(adc1_get_raw(ADC1_CHANNEL_7), &adc1_chars);
   double temp = ((8.194 - (sqrt(((-8.194) * (-8.194)) +
@@ -172,38 +202,90 @@ double get_temp() {
   return temp;
 }
 
-void renderForm(httpd_req_t *req) {
+/**
+ * @brief renders home page
+ *
+ * @param req
+ */
+void RenderHome(httpd_req_t *req) {
   char *resp = malloc(1000);
 
   sprintf((char *)resp,
-          "<h1>temp is: %f</h1>\n"
-          "<h1>temp limit is: %d</h1>\n"
+          "<script "
+          "src=\"https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/"
+          "jquery.min.js\"></script>\n"
+          "<script>\n"
+          "$(document).ready(setInterval(function(){\n"
+          "    $.get(\"/getTemp\", function(data, status){\n"
+          "\t$(\"#temperature\").html(data);    });\n"
+          "  }, 500))\n"
+          ""
+          "</script>\n"
+          "</head>\n"
+          "<h1>Temperature (Celsius)</h1>\n"
+          "<div id=\"temperature\">%.2f</div>"
+          "<h1>Temperature limit is: %d</h1>\n"
           "<form action=\"/\" method=\"post\">\n"
-          "  <label for=\"hranice_teploty\">Hranice teploty</label>\n"
+          "  <label for=\"hranice_teploty\">Temperature limit</label>\n"
           "  <input type=\"text\" id=\"hranice_teploty\" "
           "name=\"hranice_teploty\"><br><br>\n"
           "  <input type=\"submit\" value=\"Submit\">\n"
-          "</form>",
-          get_temp(), temp_limit);
+          "</form>\n"
+          "<a href=\"/getTemps\">logged temperatures</a>\n",
+          GetTemp(), temp_limit);
 
-  // sprintf((char *)resp, "<h1>temp is: %f</h1>", get_temp());
+  // sprintf((char *)resp, "<h1>temp is: %f</h1>", GetTemp());
   httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
 }
 
-esp_err_t root_get_handler(httpd_req_t *req) {
+/**
+ * @brief api for getting temperature
+ *
+ * @param req
+ * @return esp_err_t
+ */
+esp_err_t RootGetTempApi(httpd_req_t *req) {
 
-  renderForm(req);
+  char *resp = malloc(1000);
+
+  sprintf((char *)resp, "%.2f", GetTemp());
+  httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
   return ESP_OK;
 }
 
-esp_err_t root_post_handler(httpd_req_t *req) {
+/**
+ * @brief handler for home get request
+ *
+ * @param req
+ * @return esp_err_t
+ */
+esp_err_t RootGetHandler(httpd_req_t *req) {
+
+  RenderHome(req);
+  return ESP_OK;
+}
+
+/**
+ * @brief Handler for clearing temperatures
+ *
+ * @param req
+ * @return esp_err_t
+ */
+esp_err_t ClearTempsHandler(httpd_req_t *req) {
+  nvs_erase_all(nvsTemperature);
+  nvs_commit(nvsTemperature);
+  GetTempsHandler(req);
+  return ESP_OK;
+}
+
+/**
+ * @brief handler for setting temperature limit
+ *
+ * @param req
+ * @return esp_err_t
+ */
+esp_err_t ChangeTempLimitHandler(httpd_req_t *req) {
   char *buf = malloc(req->content_len + 1);
-
-  // int dataLength = esp_http_client_get_post_field(req->handle, buf);
-
-  // print data
-  // printf("Data: %s\n", buf);
-
   int ret = httpd_req_recv(req, buf, req->content_len);
 
   // parse data
@@ -213,28 +295,37 @@ esp_err_t root_post_handler(httpd_req_t *req) {
     temp_limit = atoi(hranice_teploty);
   }
 
+  // save to nvs
+  err = nvs_set_i32(nvsHandle, "temp_limit", temp_limit);
+  nvs_commit(nvsHandle);
+
   // print data
   printf("Data: %s\n", buf);
-  renderForm(req);
+  RenderHome(req);
   return ESP_OK;
 }
 
-esp_err_t getTempsHandler(httpd_req_t *req) {
-  // get all timestamps from nvs
-  // get all temps from nvs
+/**
+ * @brief Handler for printing saved temperatures
+ *
+ * @param req
+ * @return esp_err_t
+ */
+esp_err_t GetTempsHandler(httpd_req_t *req) {
 
-  // Example of listing all the key-value pairs of any type under specified
-  // handle (which defines a partition and namespace)
   char *list = malloc(1000);
   nvs_iterator_t it = NULL;
   esp_err_t res = nvs_entry_find("nvs", "temp", NVS_TYPE_ANY, &it);
   sprintf(list, "<h1> Temperatures </h1>\n");
   sprintf(list + strlen(list),
+          "<a href=\"/\">back</a>\n"
+          "<form action=\"/clearTemps\" method=\"post\">\n"
+          "  <input type=\"submit\" value=\"Clear temperatures\">\n"
+          "</form>");
+  sprintf(list + strlen(list),
           "<table> <tr> <th> Time </th> <th> Temp </th> </tr>");
 
-  // print res error name
-  printf("Error: %s\n", esp_err_to_name(res));
-
+  // iterate over all entries
   while (res == ESP_OK) {
     nvs_entry_info_t info;
     nvs_entry_info(it, &info);
@@ -249,7 +340,6 @@ esp_err_t getTempsHandler(httpd_req_t *req) {
     strftime(timeHuman, sizeof(timeHuman), "%c", &tm);
 
     // read value
-
     int32_t temp_int = 0;
     nvs_get_i32(nvsTemperature, info.key, &temp_int);
 
@@ -268,7 +358,11 @@ esp_err_t getTempsHandler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-void timeInit() {
+/**
+ * @brief Inicializes time, sets time zone and syncs time with sntp
+ *
+ */
+void TimeInit() {
 
   esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
   esp_netif_sntp_init(&config);
@@ -280,17 +374,14 @@ void timeInit() {
   tzset();
 }
 
-char *getTimeNow() {
-  time_t now;
-  struct tm timeinfo;
-  time(&now);
-  localtime_r(&now, &timeinfo);
-  char *timeNow = malloc(100);
-  strftime(timeNow, 100, "%x-%X", &timeinfo);
-  return timeNow;
-}
-
-int saveTempToNVSwithTimestamp(nvs_handle_t nvsHandle, double temp) {
+/**
+ * @brief Saves temperature to nvs with timestamp
+ *
+ * @param nvsHandle
+ * @param temp
+ * @return int
+ */
+int SaveTempToNVSwithTimestamp(nvs_handle_t nvsHandle, double temp) {
   esp_err_t err;
   char timeNow[100];
   int32_t temp_int = temp * 1000;
@@ -302,22 +393,24 @@ int saveTempToNVSwithTimestamp(nvs_handle_t nvsHandle, double temp) {
   return err;
 }
 
+/**
+ * @brief Timer callback function, reads temperature every second and saves it
+ *
+ * @param param
+ */
 void readTemperature_timer(void *param) {
   uint32_t voltage;
+  // reads voltage from ADC
   voltage =
       esp_adc_cal_raw_to_voltage(adc1_get_raw(ADC1_CHANNEL_7), &adc1_chars);
+  // converts voltage to temperature
   double temp = ((8.194 - (sqrt(((-8.194) * (-8.194)) +
                                 (4 * 0.00262 * (1324.0 - voltage * 1.0))))) /
                  (2 * (-0.00262))) +
                 30;
   ESP_LOGI(TAG, "ADC1_CHANNEL_6: %d mV", (int)voltage);
   ESP_LOGI(TAG, "Temp: %f C", temp);
-  write_temp_to_nvs(nvsHandle, temp);
-  saveTempToNVSwithTimestamp(nvsTemperature, temp);
-  double temp2 = 0;
-  temp2 = read_temp_from_nvs(nvsHandle, &err);
-  ESP_LOGI(TAG, "Temp from NVS: %f C", temp2);
-  // ets_delay_us(1000000);
+  SaveTempToNVSwithTimestamp(nvsTemperature, temp);
 
   if ((temp < (temp_limit - hystereze)) && led_is_on == 1) {
     led_is_on = 0;
@@ -328,9 +421,14 @@ void readTemperature_timer(void *param) {
     led_is_on = 1;
     gpio_set_level(LED_GPIO, 0);
   }
-  ESP_LOGI(TAG, "LED: %d", led_is_on);
+
+  ESP_LOGI(TAG, "%s", led_is_on == 1 ? "LED is on" : "LED is off");
 }
 
+/**
+ * @brief inicializes timer
+ *
+ */
 void initTimer() {
   const esp_timer_create_args_t my_timer_args = {
       .callback = &readTemperature_timer, .name = "Read Temp"};
@@ -341,15 +439,15 @@ void initTimer() {
 
 void app_main(void) {
 
+
   gpio_reset_pin(LED_GPIO);
   // Set the GPIO as a push/pull output
   gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
 
   // init time
-  timeInit();
+  TimeInit();
   // Initialize NVS
-
-  init_nvs(&err);
+  InitNVS(&err);
   err = nvs_open("temp", NVS_READWRITE, &nvsTemperature);
   if (err != ESP_OK) {
     printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
@@ -359,6 +457,9 @@ void app_main(void) {
     printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
   }
 
+  // load temp limit from nvs
+  err = nvs_get_i32(nvsHandle, "temp_limit", &temp_limit);
+
   esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_DEFAULT,
                            0, &adc1_chars);
 
@@ -366,7 +467,7 @@ void app_main(void) {
   ESP_ERROR_CHECK(adc1_config_channel_atten(ADC1_CHANNEL_7, ADC_ATTEN_DB_11));
 
   // wifi connect
-  wifi_init_sta();
+  WifiInitSta();
 
   // HTTP Server
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
@@ -375,27 +476,38 @@ void app_main(void) {
 
     httpd_uri_t uri = {.uri = "/",
                        .method = HTTP_GET,
-                       .handler = root_get_handler,
+                       .handler = RootGetHandler,
                        .user_ctx = NULL};
     httpd_register_uri_handler(server, &uri);
 
     httpd_uri_t uri2 = {.uri = "/",
                         .method = HTTP_POST,
-                        .handler = root_post_handler,
+                        .handler = ChangeTempLimitHandler,
                         .user_ctx = NULL};
     httpd_register_uri_handler(server, &uri2);
 
     httpd_uri_t getTempsUri = {.uri = "/getTemps",
                                .method = HTTP_GET,
-                               .handler = getTempsHandler,
+                               .handler = GetTempsHandler,
                                .user_ctx = NULL};
     httpd_register_uri_handler(server, &getTempsUri);
+
+    httpd_uri_t clearTempsUri = {.uri = "/clearTemps",
+                                 .method = HTTP_POST,
+                                 .handler = ClearTempsHandler,
+                                 .user_ctx = NULL};
+    httpd_register_uri_handler(server, &clearTempsUri);
+
+    httpd_uri_t getTempApiUri = {.uri = "/getTemp",
+                                 .method = HTTP_GET,
+                                 .handler = RootGetTempApi,
+                                 .user_ctx = NULL};
+    httpd_register_uri_handler(server, &getTempApiUri);
   }
   // init timer
   initTimer();
-  //______________
-  while (1) {
 
+  while (1) {
     vTaskDelay(pdMS_TO_TICKS(100)); // to prevent watchdog reset
   }
 }
