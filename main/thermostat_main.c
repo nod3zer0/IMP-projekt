@@ -34,10 +34,10 @@
 
 #define LED_GPIO GPIO_NUM_2
 
-static const char *TAG = "ADC EXAMPLE";
+static const char *TAG = "TEMPERATURE LOGGER";
 
 int temp_limit = 0;
-int hystereze = 0;
+int hystereze = 1;
 int led_is_on = 0;
 
 nvs_handle_t nvsHandle;
@@ -208,30 +208,62 @@ double GetTemp() {
  * @param req
  */
 void RenderHome(httpd_req_t *req) {
-  char *resp = malloc(1000);
+  char *resp = malloc(5000);
 
   sprintf((char *)resp,
-          "<script "
+          "<head>\n"
+          " <script "
           "src=\"https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/"
           "jquery.min.js\"></script>\n"
-          "<script>\n"
-          "$(document).ready(setInterval(function(){\n"
-          "    $.get(\"/getTemp\", function(data, status){\n"
-          "\t$(\"#temperature\").html(data);    });\n"
-          "  }, 500))\n"
-          ""
-          "</script>\n"
+          "    <meta name=\"viewport\" content=\"width=device-width, "
+          "initial-scale=1.0\">\n"
+          "    <link rel=\"stylesheet\" "
+          "href=\"https://cdn.jsdelivr.net/npm/bootstrap@3.4.1/dist/css/"
+          "bootstrap.min.css\" "
+          "integrity=\"sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+"
+          "c8xmyTe9GYg1l9a69psu\" crossorigin=\"anonymous\">\n"
+          "    <script>\n"
+          "        $(document).ready(setInterval(function() {\n"
+          "            $.get(\"/getTemp\", function(data, status) {\n"
+          "               \t$(\"#temperature\").html(data);\n"
+          "            });\n"
+          "        }, 500))\n"
+          "    </script>\n"
           "</head>\n"
-          "<h1>Temperature (Celsius)</h1>\n"
-          "<div id=\"temperature\">%.2f</div>"
-          "<h1>Temperature limit is: %d</h1>\n"
-          "<form action=\"/\" method=\"post\">\n"
-          "  <label for=\"hranice_teploty\">Temperature limit</label>\n"
-          "  <input type=\"text\" id=\"hranice_teploty\" "
-          "name=\"hranice_teploty\"><br><br>\n"
-          "  <input type=\"submit\" value=\"Submit\">\n"
-          "</form>\n"
-          "<a href=\"/getTemps\">logged temperatures</a>\n",
+          "\n"
+          "<div class=\"container\">\n"
+          "    <div class=\"row\">\n"
+          "        <div class=\"col-md-4\">\n"
+          "            <h1>Temperature sensor</h1>\n"
+          "        </div>\n"
+          "    </div>\n"
+          "    <div class=\"row\">\n"
+          "        <div class=\"col-md-2\">Temperature (&deg;C) </div>\n"
+          "        <div class=\"col-md-2\" id=\"temperature\">%.1f</div>\n"
+          "    </div>\n"
+          "    <div class=\"row\">\n"
+          "        <div class=\"col-md-4\">Temperature limit is: %d</div>\n"
+          "    </div>\n"
+          "    <div class=\"row\">\n"
+          "        <div class=\"col-md-4\">\n"
+          "            <form action=\"/\" method=\"post\">\n"
+          "                <div class=\"form-group\">\n"
+          "                    <label for=\"hranice_teploty\">Temperature "
+          "limit</label>\n"
+          "                    <input class=\"form-control\" type=\"text\" "
+          "id=\"hranice_teploty\" name=\"hranice_teploty\"><br>\n"
+          "                    <input class=\"form-control\" type=\"submit\" "
+          "value=\"Submit\">\n"
+          "                </div>\n"
+          "            </form>\n"
+          "        </div>\n"
+          "    </div>\n"
+          "    <div class=\"row\">\n"
+          "        <div class=\"col-md-4\">\n"
+          "            <a href=\"/getTemps\">logged temperatures</a>\n"
+          "        </div>\n"
+          "    </div>\n"
+          "</div>",
           GetTemp(), temp_limit);
 
   // sprintf((char *)resp, "<h1>temp is: %f</h1>", GetTemp());
@@ -248,7 +280,7 @@ esp_err_t RootGetTempApi(httpd_req_t *req) {
 
   char *resp = malloc(1000);
 
-  sprintf((char *)resp, "%.2f", GetTemp());
+  sprintf((char *)resp, "%.1f", GetTemp());
   httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
   return ESP_OK;
 }
@@ -318,12 +350,27 @@ esp_err_t GetTempsHandler(httpd_req_t *req) {
   esp_err_t res = nvs_entry_find("nvs", "temp", NVS_TYPE_ANY, &it);
   sprintf(list, "<h1> Temperatures </h1>\n");
   sprintf(list + strlen(list),
+          "<head>\n"
+          "    <meta name=\"viewport\" content=\"width=device-width, "
+          "initial-scale=1.0\">\n"
+          "    <link rel=\"stylesheet\" "
+          "href=\"https://cdn.jsdelivr.net/npm/bootstrap@3.4.1/dist/css/"
+          "bootstrap.min.css\" "
+          "integrity=\"sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+"
+          "c8xmyTe9GYg1l9a69psu\" crossorigin=\"anonymous\">\n"
+          "<style>"
+          "th, td {\n"
+          "padding: 15px;\n"
+          "}\n"
+          "</style>\n"
+          "</head>\n"
           "<a href=\"/\">back</a>\n"
           "<form action=\"/clearTemps\" method=\"post\">\n"
-          "  <input type=\"submit\" value=\"Clear temperatures\">\n"
+          "  <input class=\"form-control\" type=\"submit\" value=\"Clear "
+          "temperatures\">\n"
           "</form>");
-  sprintf(list + strlen(list),
-          "<table> <tr> <th> Time </th> <th> Temp </th> </tr>");
+  sprintf(list + strlen(list), "<table> <tr> <th> Time "
+                               "</th> <th> Temp </th> </tr>");
 
   // iterate over all entries
   while (res == ESP_OK) {
@@ -343,7 +390,7 @@ esp_err_t GetTempsHandler(httpd_req_t *req) {
     int32_t temp_int = 0;
     nvs_get_i32(nvsTemperature, info.key, &temp_int);
 
-    sprintf(list + strlen(list), "<tr><td> %s </td>\n<td> %f </td>\n</tr>\n",
+    sprintf(list + strlen(list), "<tr><td> %s </td>\n<td> %.1f </td>\n</tr>\n",
             timeHuman, (temp_int / 1000.0));
     char *tmpList = realloc(list, strlen(list) + 200);
     if (tmpList != NULL) {
@@ -411,7 +458,7 @@ void readTemperature_timer(void *param) {
   ESP_LOGI(TAG, "ADC1_CHANNEL_6: %d mV", (int)voltage);
   ESP_LOGI(TAG, "Temp: %f C", temp);
   SaveTempToNVSwithTimestamp(nvsTemperature, temp);
-
+  // hystereze
   if ((temp < (temp_limit - hystereze)) && led_is_on == 1) {
     led_is_on = 0;
     gpio_set_level(LED_GPIO, 1);
@@ -439,6 +486,7 @@ void initTimer() {
 
 void app_main(void) {
 
+  // nvs_flash_erase();
 
   gpio_reset_pin(LED_GPIO);
   // Set the GPIO as a push/pull output
