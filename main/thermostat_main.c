@@ -38,7 +38,7 @@
 static const char *TAG = "TEMPERATURE LOGGER";
 
 int32_t temp_limit = 0;
-int hysteresis = HYSTERESIS;
+int hysteresis = 3;
 int led_is_on = 0;
 
 nvs_handle_t nvsHandle;
@@ -51,10 +51,6 @@ static esp_adc_cal_characteristics_t adc1_chars;
 /* FreeRTOS event group to signal when we are connected*/
 static EventGroupHandle_t s_wifi_event_group;
 
-/* The event group allows multiple bits for each event, but we only care about
- * two events:
- * - we are connected to the AP with an IP
- * - we failed to connect after the maximum amount of retries */
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
 
@@ -193,6 +189,11 @@ double ReadTempFromNVS(nvs_handle_t nvsHandle, esp_err_t *err) {
   return temp_int / 1000.0;
 }
 
+/**
+ * @brief Get temperature from ADC
+ *
+ * @return double
+ */
 double GetTemp() {
   uint32_t voltage =
       esp_adc_cal_raw_to_voltage(adc1_get_raw(ADC1_CHANNEL_7), &adc1_chars);
@@ -460,13 +461,20 @@ void readTemperature_timer(void *param) {
   ESP_LOGI(TAG, "Temp: %f C", temp);
   SaveTempToNVSwithTimestamp(nvsTemperature, temp);
   // hysteresis
-  if ((temp < (temp_limit - hysteresis)) && led_is_on == 1) {
-    led_is_on = 0;
-    gpio_set_level(LED_GPIO, 1);
+
+  ESP_LOGI(TAG, "Temp limit: %ld C", temp_limit);
+  ESP_LOGI(TAG, "Hysteresis: %d C", hysteresis);
+  if ((temp < (temp_limit - hysteresis)) && led_is_on == 0) {
+    led_is_on = 1;
   }
 
-  if ((temp > (temp_limit + hysteresis)) && led_is_on == 0) {
-    led_is_on = 1;
+  if ((temp > (temp_limit + hysteresis)) && led_is_on == 1) {
+    led_is_on = 0;
+  }
+
+  if (led_is_on == 1) {
+    gpio_set_level(LED_GPIO, 1);
+  } else {
     gpio_set_level(LED_GPIO, 0);
   }
 
@@ -487,8 +495,10 @@ void initTimer() {
 
 void app_main(void) {
 
-  // nvs_flash_erase();
+  // set histeresis
+  hysteresis = atoi(HYSTERESIS);
 
+  // nvs_flash_erase();
   gpio_reset_pin(LED_GPIO);
   // Set the GPIO as a push/pull output
   gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);

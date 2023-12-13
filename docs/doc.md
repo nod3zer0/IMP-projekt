@@ -19,12 +19,10 @@ header-includes: |
 
 # Úvod
 
-Tento dokument slouží jako dokumentace k projektu měření teploty.
-
 Program je napsán v jazyce C++ a je určen pro desku Wemos D1 R32(ESP32).
 
-Program periodicky každých 0.5s měří teplotu a ukládá ji společně s časovými razítky získané pomocí RTC do paměti. Program také spustí server, a připojí se na wifi, konfigurace wifi je v idf menuconfig.
-Na adrese, která mu byla přidělena vypisuje aktuální teplotu. Lze také nastavit hranice teploty, při které se rozsvítí led dioda. Tato hranice má hysterezi 3 °C (lze změnit v idf menuconfig).
+Program periodicky každých 500ms měří teplotu a ukládá ji společně s časovými razítky získanými pomocí RTC do paměti. Program také spustí server, a připojí se na wifi, konfigurace wifi je v idf menuconfig.
+Na adrese, která mu byla přidělena běží webové rozhraní, kde vypisuje aktuální teplotu. Lze také nastavit hranice teploty, při jejímž překročení zhasne LED. Tato hranice má hysterezi 3 °C (lze změnit v idf menuconfig).
 
 Webové rozhraní také obsahuje možnost zobrazení historie teploty. Tato historie je zobrazena v tabulce. V tabulce je zobrazena teplota, datum a čas naměření.
 V tomto zobrazení je také tlačítko na smazání historie.
@@ -33,14 +31,14 @@ V tomto zobrazení je také tlačítko na smazání historie.
 
 ## Zapojení
 
-Čidlo LMT85LPG, je třeba připojit k 3.3V a GND desky Wemos D1 r32. Výstupní signál čidla je třeba zapojit k pinu IO35. LED se připojí přes rezistor k pinu IO2 a GND. Je spínaná logickou 1.
+Čidlo LMT85LPG, je třeba připojit k 3.3V a GND desky Wemos D1 r32. Výstupní signál čidla je třeba zapojit k pinu IO35. LED se připojí přes rezistor k pinu IO2 a GND. LED je spínaná logickou 1.
 
 ![Schéma zapojení](img/board.png){ width=250px }
 ![Schéma zapojení](img/schematic.png){ width=250px }
 
 ## Nastavení
 
-Základní nastavení aplikace je pomocí IDF menuconfig. Jde zde nastavit SSID, heslo wifi a další nastavení wifi. Také je možné zde nastavit hysterzi teploty.
+Základní nastavení aplikace je pomocí IDF menuconfig (`idf.py menuconfig`). Jde zde nastavit SSID, heslo a další nastavení wifi. Také je možné zde nastavit hysterezi teploty.
 
 ![Menuconfig](img/menuconfig.png){ width=250px }
 
@@ -50,12 +48,19 @@ Je nutné nastavit SSID a heslo. Wifi se připojuje při startu programu a uživ
 
 ## Nastavení hranice teploty
 
-Hranice teploty se nastavuje pomocí webového rozhraní. Na adrese, která je vypsána v konzoli, je dostupné webové rozhraní. Na této stránce je možné nastavit hranice teploty. Tato hranice má histerezi 1 °C.
+Hranice teploty se nastavuje pomocí webového rozhraní. Toto rozhraní je dostupné na adrese, které je vypsáno přes UART do terminálu. Při překročení hranice teploty se LED zhasne, při poklesu pod hranici se LED rozsvítí. Je zde také hystereze 3 °C, která je možná přenastavit v menuconfig.
 
 ## Smazání paměti
 
-Paměť se maže pomocí webového rozhraní. Na adrese http://ipadresa/getTemps je možné zobrazit historii teplot. Na této stránce je tlačítko na smazání historie.
+Paměť se maže pomocí webového rozhraní. Na adrese http://ipadresa/getTemps je možné zobrazit historii teplot. Na této stránce je také tlačítko na smazání historie.
 
+## Nahrání programu
+
+Program se nahraje do Wemos D1 R32 pomocí příkazu `idf.py flash monitor`. Parametr `flash` přeloží program a nahraje ho do mikroprocesoru. Parametr `monitor` spustí monitorování výstupu z UART, kde se vypíše stav připojení, ip adresa web serveru a následně se vypisuje napětí a teplota.
+
+## Připojení k serveru
+
+Po připojení k wifi se vypíše ip adresa serveru přes UART. Na této adrese je dostupné webové rozhraní.
 
 # Způsob realizace
 
@@ -100,6 +105,6 @@ Každá url adresa, má přiřazenou funkci, která se spustí při přístupu n
 
 # Zdroje
 
-- https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/
-- [2] datasheet: https://www.ti.com/lit/ds/symlink/lmt85.pdf?ts=1696975223474&ref_url=https%253A%252F%252Fwww.google.com%252F
+- [1] esp idf api: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/
+- [2] datasheet: https://www.ti.com/lit/ds/symlink/lmt85.pdf?ts=1696975223474
 

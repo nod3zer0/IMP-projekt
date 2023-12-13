@@ -339,14 +339,15 @@ CONFIG_PARTITION_TABLE_MD5=y
 # end of Partition Table
 
 #
-# Example Configuration
+# Temperature logger
 #
-CONFIG_ESP_WIFI_SSID="redmi"
+CONFIG_ESP_WIFI_SSID="ceskar"
 CONFIG_ESP_WIFI_PASSWORD="rustrust"
 CONFIG_ESP_MAXIMUM_RETRY=5
 CONFIG_HTTPD_MAX_REQ_HDR_LEN=2048
 CONFIG_HTTPD_MAX_URI_LEN=2048
-# end of Example Configuration
+CONFIG_HYSTERESIS="3"
+# end of Temperature logger
 
 #
 # Compiler options
