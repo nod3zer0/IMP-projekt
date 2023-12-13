@@ -31,17 +31,19 @@
 #define ESP_WIFI_SSID CONFIG_ESP_WIFI_SSID
 #define ESP_WIFI_PASS CONFIG_ESP_WIFI_PASSWORD
 #define ESP_MAXIMUM_RETRY CONFIG_ESP_MAXIMUM_RETRY
+#define HYSTERESIS CONFIG_HYSTERESIS
 
 #define LED_GPIO GPIO_NUM_2
 
 static const char *TAG = "TEMPERATURE LOGGER";
 
-int temp_limit = 0;
-int hystereze = 1;
+int32_t temp_limit = 0;
+int hysteresis = HYSTERESIS;
 int led_is_on = 0;
 
 nvs_handle_t nvsHandle;
 nvs_handle_t nvsTemperature;
+nvs_handle_t nvsLimit;
 esp_err_t err;
 
 static esp_adc_cal_characteristics_t adc1_chars;
@@ -152,8 +154,7 @@ void WifiInitSta(void) {
 
   // write connection result
   if (bits & WIFI_CONNECTED_BIT) {
-    ESP_LOGI(TAG, "connected to ap SSID:%s password:%s", ESP_WIFI_SSID,
-             ESP_WIFI_PASS);
+    ESP_LOGI(TAG, "connected to ap SSID:%s", ESP_WIFI_SSID);
   } else if (bits & WIFI_FAIL_BIT) {
     ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:%s", ESP_WIFI_SSID,
              ESP_WIFI_PASS);
@@ -242,7 +243,7 @@ void RenderHome(httpd_req_t *req) {
           "        <div class=\"col-md-2\" id=\"temperature\">%.1f</div>\n"
           "    </div>\n"
           "    <div class=\"row\">\n"
-          "        <div class=\"col-md-4\">Temperature limit is: %d</div>\n"
+          "        <div class=\"col-md-4\">Temperature limit is: %ld</div>\n"
           "    </div>\n"
           "    <div class=\"row\">\n"
           "        <div class=\"col-md-4\">\n"
@@ -328,8 +329,8 @@ esp_err_t ChangeTempLimitHandler(httpd_req_t *req) {
   }
 
   // save to nvs
-  err = nvs_set_i32(nvsHandle, "temp_limit", temp_limit);
-  nvs_commit(nvsHandle);
+  err = nvs_set_i32(nvsLimit, "temp_limit", temp_limit);
+  nvs_commit(nvsLimit);
 
   // print data
   printf("Data: %s\n", buf);
@@ -458,13 +459,13 @@ void readTemperature_timer(void *param) {
   ESP_LOGI(TAG, "ADC1_CHANNEL_6: %d mV", (int)voltage);
   ESP_LOGI(TAG, "Temp: %f C", temp);
   SaveTempToNVSwithTimestamp(nvsTemperature, temp);
-  // hystereze
-  if ((temp < (temp_limit - hystereze)) && led_is_on == 1) {
+  // hysteresis
+  if ((temp < (temp_limit - hysteresis)) && led_is_on == 1) {
     led_is_on = 0;
     gpio_set_level(LED_GPIO, 1);
   }
 
-  if ((temp > (temp_limit + hystereze)) && led_is_on == 0) {
+  if ((temp > (temp_limit + hysteresis)) && led_is_on == 0) {
     led_is_on = 1;
     gpio_set_level(LED_GPIO, 0);
   }
@@ -504,9 +505,18 @@ void app_main(void) {
   if (err != ESP_OK) {
     printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
   }
+  err = nvs_open("limit", NVS_READWRITE, &nvsLimit);
 
   // load temp limit from nvs
-  err = nvs_get_i32(nvsHandle, "temp_limit", &temp_limit);
+  err = nvs_get_i32(nvsLimit, "temp_limit", &temp_limit);
+
+  if (err != ESP_OK) {
+    ESP_LOGI(TAG, "Error (%s) opening NVS handle!\n", esp_err_to_name(err));
+
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+      ESP_LOGI(TAG, "The value is not initialized yet!\n");
+    }
+  }
 
   esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_DEFAULT,
                            0, &adc1_chars);

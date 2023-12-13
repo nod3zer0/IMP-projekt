@@ -1,4 +1,4 @@
-menu "Example Configuration"
+menu "Temperature logger"
 
     config ESP_WIFI_SSID
         string "WiFi SSID"
@@ -30,6 +30,12 @@ menu "Example Configuration"
         default 512
         help
             This sets the maximum supported size of HTTP request URI to be processed by the server
+
+    config HYSTERESIS
+        string "Hysteresis"
+        default "3"
+        help
+            Hysteresis value in degrees Celsius
 
 
 endmenu
