@@ -1,22 +1,3 @@
----
-title: IMP - Měření teploty
-author: René Češka
-date: 12.12.2023
-toc: true
-numbersections: true
-geometry: margin=2.5cm
-urlcolor: blue
-header-includes: |
-    \usepackage{fancyhdr}
-    \pagestyle{fancy}
-    \rfoot{Page \thepage}
----
-
-
-
-
-\pagebreak
-
 # Úvod
 
 Program je napsán v jazyce C++ a je určen pro desku Wemos D1 R32(ESP32).
@@ -33,14 +14,14 @@ V tomto zobrazení je také tlačítko na smazání historie.
 
 Čidlo LMT85LPG, je třeba připojit k 3.3V a GND desky Wemos D1 r32. Výstupní signál čidla je třeba zapojit k pinu IO35. LED se připojí přes rezistor k pinu IO2 a GND. LED je spínaná logickou 1.
 
-![Schéma zapojení](docs/img/board.png){ width=250px }
-![Schéma zapojení](docs/img/schematic.png){ width=250px }
+![Schéma zapojení](docs/img/board.png)
+![Schéma zapojení](docs/img/schematic.png)
 
 ## Nastavení
 
 Základní nastavení aplikace je pomocí IDF menuconfig (`idf.py menuconfig`). Jde zde nastavit SSID, heslo a další nastavení wifi. Také je možné zde nastavit hysterezi teploty.
 
-![Menuconfig](docs/img/menuconfig.png){ width=250px }
+![Menuconfig](docs/img/menuconfig.png)
 
 ### Nastavení wifi
 
@@ -70,8 +51,8 @@ Program byl napsán v jazyce C++ a je určen pro desku Wemos D1 R32(ESP32).
 
 ## hlavní smyčka
 
-![inicializace](docs/img/MainLoop.png){ width=200px }
-![přerušení](docs/img/TimerInterrupt.png){ width=400px }
+![inicializace](docs/img/MainLoop.png)
+![přerušení](docs/img/TimerInterrupt.png)
 
 ## Použité knihovny
 
@@ -99,8 +80,8 @@ Teplota je aktualizována každých 500ms pomocí javascriptu, který posílá p
 
 Každá url adresa, má přiřazenou funkci, která se spustí při přístupu na tuto adresu. Funkce vrací html kód, který se má zobrazit.
 
-![main page](docs/img/main_page.jpg){ width=250px }
-![temperature page](docs/img/temp_page.jpg){ width=250px }
+![main page](docs/img/main_page.jpg)
+![temperature page](docs/img/temp_page.jpg)
 
 
 # Zdroje
